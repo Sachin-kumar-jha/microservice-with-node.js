@@ -1,0 +1,168 @@
+version: "3.8"
+services:
+  # ==============================
+  # Redis
+  # ==============================
+  redis:
+    image: redis:7
+    command: ["redis-server", "--save", "60", "1"]
+    ports:
+      - "6379:6379"
+    networks:
+      - microservices-network
+
+  # ==============================
+  # Kafka & Zookeeper
+  # ==============================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - microservices-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.1
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    networks:
+      - microservices-network
+
+  # ==============================
+  # API Gateway
+  # ==============================
+  api-gateway:
+    build: ./services/api-gateway
+    environment:
+      - PORT=${API_GATEWAY_PORT:-3000}
+      - USER_SVC=http://user-service:4001
+      - INVENTORY_SVC=http://inventory-service:4002
+      - ORDER_SVC=http://order-service:4003
+      - PAYMENT_SVC=http://payment-service:4004
+      - NOTIFICATION_SVC=http://notification-service:4005
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - user-service
+      - inventory-service
+      - order-service
+      - payment-service
+      - notification-service
+    ports:
+      - "${API_GATEWAY_PORT:-3000}:3000"
+    networks:
+      - microservices-network
+
+  # ==============================
+  # User Service
+  # ==============================
+  user-service:
+    build: ./services/user-service
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - PORT=${USER_SVC_PORT:-4001}
+      - JWT_SECRET=${JWT_SECRET}
+    ports:
+      - "${USER_SVC_PORT:-4001}:4001"
+    networks:
+      - microservices-network
+
+  # ==============================
+  # Inventory Service
+  # ==============================
+  inventory-service:
+    build: ./services/inventory-service
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - PORT=${INVENTORY_SVC_PORT:-4002}
+    depends_on:
+      - redis
+    ports:
+      - "${INVENTORY_SVC_PORT:-4002}:4002"
+    networks:
+      - microservices-network
+
+  # ==============================
+  # Order Service
+  # ==============================
+  order-service:
+    build: ./services/order-service
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKER=kafka:9092
+      - PAYMENT_SVC=http://payment-service:4004
+      - NOTIFICATION_TOPIC=${NOTIFICATION_TOPIC}
+      - PORT=${ORDER_SVC_PORT:-4003}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - redis
+      - kafka
+      - payment-service
+    ports:
+      - "${ORDER_SVC_PORT:-4003}:4003"
+    networks:
+      - microservices-network
+
+  # ==============================
+  # Payment Service
+  # ==============================
+  payment-service:
+    build: ./services/payment-service
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET}
+      - REDIS_URL=redis://redis:6379
+      - KAFKA_BROKER=kafka:9092
+      - NOTIFICATION_TOPIC=${NOTIFICATION_TOPIC}
+      - PORT=${PAYMENT_SVC_PORT:-4004}
+    depends_on:
+      - redis
+      - kafka
+    ports:
+      - "${PAYMENT_SVC_PORT:-4004}:4004"
+    networks:
+      - microservices-network
+
+  # ==============================
+  # Notification Service
+  # ==============================
+  notification-service:
+    build: ./services/notification-service
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - KAFKA_BROKER=kafka:9092
+      - NOTIFICATION_TOPIC=${NOTIFICATION_TOPIC}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - FROM_EMAIL=${FROM_EMAIL}
+      - PORT=${NOTIF_SVC_PORT:-4005}
+    depends_on:
+      - kafka
+    ports:
+      - "${NOTIF_SVC_PORT:-4005}:4005"
+    networks:
+      - microservices-network
+
+# ==============================
+# Shared Network for all services
+# ==============================
+networks:
+  microservices-network:
+    driver: bridge
