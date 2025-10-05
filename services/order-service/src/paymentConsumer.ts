@@ -28,7 +28,7 @@ async function processMessage(id:string, fields:any[]) {
     await prisma.order.create({
       data: {
         externalId: String(orderId),
-        userId: Number(f.userId),
+        userId:f.userId,
         items,
         amount,
         status: "CONFIRMED"

@@ -30,7 +30,7 @@ async function tryReserve(orderId: string, items: any[]) {
     // Check stock
     for (const it of items) {
       const p = await tx.product.findUnique({
-        where: { id: Number(it.productId) }
+        where: { id: it.productId }
       });
       if (!p || p.stock < Number(it.qty)) {
         return { ok: false, reason: "OUT_OF_STOCK" };
@@ -39,8 +39,9 @@ async function tryReserve(orderId: string, items: any[]) {
 
     // Deduct stock
     for (const it of items) {
+      console.log(it.productId);
       await tx.product.update({
-        where: { id: Number(it.productId) },
+        where: { id: it.productId},
         data: { stock: { decrement: Number(it.qty) } }
       });
     }
@@ -53,6 +54,7 @@ async function tryReserve(orderId: string, items: any[]) {
     return { ok: true };
   });
 }
+
 
 // -------------------- Message Processor --------------------
 async function processMessage(id: string, fields: any[]) {

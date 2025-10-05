@@ -10,7 +10,7 @@ datasource db {
 model Order {
   id         String   @id @map("_id") @default(auto()) @db.ObjectId
   externalId String   @unique
-  userId     Int
+  userId     String
   items      Json
   amount     Float
   status     String
