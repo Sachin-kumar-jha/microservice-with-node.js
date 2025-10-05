@@ -1,17 +1,21 @@
-# 🚀 Microservices with API Gateway (Dockerized + Prisma)
+# 🚀 Microservices with API Gateway (Dockerized + Prisma + Proxy User Headers)
 
 ## 📌 Overview
 
-This repository demonstrates a **microservices setup with Docker**.
+This repository demonstrates a **microservices setup with Docker**, using an **API Gateway** to forward requests and attach user information extracted from JWT tokens.  
+
 It includes the following services:
 
-* **API Gateway** → Routes requests and handles authentication/forwarding
-* **User Service** → Manages user-related data and authentication
-* **Order Service** → Manages order creation and items
-* **Inventory Service** → Handles stock and product availability
+- **API Gateway** → Handles routing, authentication, and forwards requests to downstream services with `userId` and `email` headers.
+- **User Service** → Manages user-related data and authentication.
+- **Order Service** → Manages order creation and items.
+- **Inventory Service** → Handles stock and product availability.
+- **Payment Service** → Handles payments and publishes confirmed payments to Redis/Kafka.
 
-⚠️ **Current Issue**: `userId` is **not being received inside `order-service`**.
-Even though the API Gateway is supposed to attach `userId` (from JWT / headers), inside the `order-service` it comes as `undefined`.
+⚠️ **Problem Solved**: Previously, `userId` was missing in downstream services.  
+✅ Now, the API Gateway **decodes JWT, attaches `userId` and `email` to headers**, and forwards requests to the services.
+
+> ⚠️ **Note:** Using `http-proxy` directly sometimes causes issues with consuming `req.body` in downstream services because the body stream is already read by middleware. The solution in this project ensures the body is preserved while forwarding requests.
 
 ---
 
@@ -22,131 +26,145 @@ Even though the API Gateway is supposed to attach `userId` (from JWT / headers),
 ```bash
 git clone <repo-link>
 cd <project-folder>
+2. Install Dependencies
+Go to each service folder and run:
 ```
-
-### 2. Install Dependencies
-
-Go to each service folder and install:
-
 ```bash
 npm install
 ```
+## 3. Setup Prisma Schema
 
-### 3. Setup Prisma Schema
-
-Inside each service (`user-service`, `order-service`, `inventory-service`), run:
-
+# Inside each service (user-service, order-service, inventory-service), run:
 ```bash
 npx prisma db push
+This will create or update the database schema.
 ```
-
-This will create/update the database schema for each service.
-
-### 4. Run Services with Docker
-
+## 4. Run Services with Docker
 ```bash
 docker-compose up --build
 ```
+## 5. Access Services
+Service	URL
+- API Gateway	http://localhost:5000
+- User Service	http://localhost:4001
+Order Service	http://localhost:4003
+Inventory Service	http://localhost:4003
+Payment Service	http://localhost:4004
 
-### 5. Access Services
+## 🔍 JWT & Proxy Flow
+# Client logs in via /auth/login (User Service) and receives a JWT token.
 
-* **API Gateway** → `http://localhost:3000`
-* **User Service** → `http://localhost:4000`
-* **Order Service** → `http://localhost:5000`
-* **Inventory Service** → `http://localhost:6000`
+- Client sends requests to API Gateway with:
+- Authorization: Bearer <token>
+- API Gateway decodes JWT using middleware and attaches the following headers:
 
----
+```bash
+x-user-id: <decoded user id>
+x-user-email: <decoded user email>
+Requests are proxied to the respective service (order, inventory, payment) while keeping req.body intact.
+```
+# Downstream services can access user info:
 
-## 🐞 Current Issue (Order Service)
+```ts
 
-* Creating an order via API Gateway:
+const userId = req.headers['x-user-id'];
+const email = req.headers['x-user-email'];
 
-  ```bash
-  POST http://localhost:3000/orders
-  Content-Type: application/json
+```
+## 📌 API Gateway Example Routes
+Route	Auth Required	Description
+- /users/*      	- No	Forward to User Service
+- /order/*	      - Yes	Forward to Order Service
+- /inventory/*	  - Yes	Forward to Inventory Service
+- /payment/*	    - Yes	Forward to Payment Service
+- /	No	Health check
 
-  {
-    "items": [
-      { "productId": "101", "quantity": 2 },
-      { "productId": "102", "quantity": 1 }
-    ]
-  }
-  ```
+## ⚡ Example: Create Order
+# Request to API Gateway:
 
-* ✅ **Expected in order-service**:
+```bash
+POST http://localhost:5000/order
+Authorization: Bearer <JWT_TOKEN>
+Content-Type: application/json
+json
+Copy code
+{
+  "items": [
+    { "productId": "101", "qty": 2 },
+    { "productId": "102", "qty": 1 }
+  ]
+}
+```
 
-  ```ts
-  {
-    userId: "decoded-from-token",
-    items: [...]
-  }
-  ```
+## Forwarded to order-service:
 
-* ❌ **Actual in order-service**:
+```bash
+{
+  userId: "<decoded user id from JWT>",
+  items: [
+    { productId: "101", qty: 2 },
+    { productId: "102", qty: 1 }
+  ]
+}
+✅ userId is now available in the service!
+```
+## 🔧 How the Proxy Works Middleware decodes JWT token from Authorization header.
 
-  ```ts
-  {
-    items: [...]
-    // userId missing
-  }
-  ```
+- Adds x-user-id and x-user-email headers.
 
-* Logs:
+- Uses http-proxy (or http-proxy-middleware) to forward requests.
 
-  ```ts
-  console.log(req.body.userId); // undefined
-  ```
+- Preserves the original req.body, avoiding the common issue where middleware consumes the body stream before proxying.
 
-This breaks the flow since orders can’t be linked to a user.
-
----
-
-## 🔍 How to Reproduce
-
-1. Run `npx prisma db push` in each service.
-2. Start services using Docker.
-3. Send a POST request with `items` only (no `userId` in body).
-4. Check logs in **order-service** → `userId` is missing.
-
----
-
-## 💡 Expected Flow
-
-* API Gateway should decode JWT / read headers → extract `userId`.
-* API Gateway should attach `userId` to the request body before proxying it to **order-service**.
-* Order Service should receive both:
-
-  ```ts
-  {
-    userId: "...",
-    items: [...]
-  }
-  ```
-
----
-
-## 🤝 Contribution
-
-If you know the fix:
-
-* Check **API Gateway → Orders route**
-* Suggest improvements
-* Or directly submit a **Pull Request** 🙏
-
----
+- Handles errors and logs requests.
 
 ## 🧰 Tech Stack
+- Node.js + Express.js
 
-* Node.js + Express.js
-* TypeScript
-* Prisma ORM
-* JWT Authentication
-* http-proxy-middleware
-* Docker + Docker Compose
+- TypeScript
 
----
+- Prisma ORM
 
-## 📬 Contact
+- JWT Authentication
 
-Open an issue or create a PR if you have insights.
-Your contributions are welcome 🚀
+- http-proxy / http-proxy-middleware
+
+- Docker + Docker Compose
+
+- redis
+
+-kafka/kafkajs
+
+## ✅ Benefits of This Approach
+- No need to send userId manually in each request.
+
+- Downstream services are auth-agnostic and trust headers from API Gateway.
+
+- Easy debugging with logs in API Gateway showing forwarded requests.
+
+- Can extend to microservices like notifications, payments, inventory, etc.
+
+# 🔔 Notification Flow (Optional)
+- Payment Service publishes confirmed payments to Redis streams and Kafka.
+
+- Notification Service consumes Kafka events and can send emails (or just log for testing).
+
+# Example Kafka message format:
+```bash
+{
+  "type": "order.confirmed",
+  "orderId": "abc123",
+  "userId": "user123",
+  "items": [...],
+  "amount": 200,
+  "email": "user@example.com",
+  "ts": 1696512345678
+}
+
+```
+## 📬 Contribution
+Submit PRs if you find improvements.
+
+Report issues for bugs or Docker setup.
+
+Contributions are welcome! 🚀

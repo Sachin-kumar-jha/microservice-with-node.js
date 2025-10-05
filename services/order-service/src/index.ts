@@ -1,11 +1,13 @@
 import express from "express";
 import prisma from "./prismaClient"; // your prisma client
 import { redis, publishOrderCreated } from "./producer";
-
+import { Request, Response, NextFunction } from "express";
+import { startPaymentConsumer } from "./paymentConsumer";
 const app = express();
 app.use(express.json());
 
-import { Request, Response, NextFunction } from "express";
+
+
 
 interface AuthRequest extends Request {
   user?: { id: string; email: string };
@@ -46,8 +48,40 @@ app.post("/placeorder", async (req: AuthRequest, res: Response, next: NextFuncti
   }
 });
 
+app.post("/orders/:orderId/status", async (req, res) => {
+  const { orderId } = req.params;
+  const { status } = req.body;
+
+  if (!status) return res.status(400).json({ error: "Missing status" });
+
+  try {
+    // Find the order by externalId (assuming you store orderId from payment service as externalId)
+    const order = await prisma.order.findUnique({ where: { externalId: orderId } });
+
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    // Update status
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: { status }
+    });
+
+    console.log(`Order ${orderId} status updated to ${status}`);
+
+    return res.status(200).json({ success: true, order: updated });
+  } catch (err: any) {
+    console.error("Error updating order status:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 4003;
-app.listen(PORT, () => console.log(`Order Service running on port ${PORT}`));
+app.listen(PORT, async () =>{
+console.log(`Order Service running on port ${PORT}`);
+   startPaymentConsumer().catch((err) => {
+    console.error("Payment consumer failed to start", err);
+    process.exit(1); // exit if consumer fails
+  });
+});

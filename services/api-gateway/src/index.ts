@@ -237,6 +237,10 @@ app.all("/order/*", authMiddleware, (req: AuthRequest, res: Response) => {
   req.url = req.url.replace(/^\/order/, "");
   forwardRequest(req, res, ORDER_SVC);
 });
+app.all("/payment/*",(req: AuthRequest, res: Response) => {
+    req.url = req.url.replace(/^\/payment/, "");
+  forwardRequest(req, res, PAYMENT_SVC);
+})
 
 // User route (no auth for example)
 app.all("/users/*", (req: AuthRequest, res: Response) => {
