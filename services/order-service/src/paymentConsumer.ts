@@ -12,7 +12,7 @@ const producer = kafka.producer();
 
 async function ensureKafka() {
   await producer.connect();
-  console.log("✅ Kafka producer connected");
+  console.log("Kafka producer connected");
 }
 
 // Automatically create group if not exists
@@ -71,7 +71,7 @@ async function processMessage(id: string, fields: any[]) {
     "ts", String(Date.now())
   );
 
-  // 2️⃣ Publish to Kafka for notifications
+  //Publish to Kafka for notifications
   await producer.send({
     topic: process.env.NOTIFICATION_TOPIC || "notifications",
     messages: [
@@ -88,7 +88,7 @@ async function processMessage(id: string, fields: any[]) {
       },
     ],
   });
-  console.log(`✅ Published order.confirmed to Kafka for ${orderId}`);
+  console.log(`Published order.confirmed to Kafka for ${orderId}`);
 
   // Acknowledge Redis message
   await redis.xack(STREAM, GROUP, id);

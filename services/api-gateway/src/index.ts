@@ -11,7 +11,7 @@
 // // ----------------------
 // interface AuthRequest extends Request {
 //   user?: { id: string; email: string };
- 
+
 // }
 
 // app.post("/auth/login",express.json(), (req: Request, res: Response) => {
@@ -58,7 +58,7 @@
 //   onProxyReq?: (proxyReq: any, req: AuthRequest, res: Response) => void;
 //   onProxyRes?: (proxyRes: IncomingMessage, req: AuthRequest, res: Response) => void;
 //   onError?:(err:any,req:AuthRequest,res:Response)=>void;
-  
+
 // }
 
 // // // ----------------------
@@ -186,9 +186,9 @@ interface AuthRequest extends Request {
 // Auth middleware
 // ----------------------
 const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token =req.headers.authorization?.split(" ")[1];
+  const token = req.headers.authorization?.split(" ")[1];
 
- if (!token) {
+  if (!token) {
     return res.status(401).json({ message: "No token provided" });
   }
 
@@ -237,21 +237,27 @@ app.all("/order/*", authMiddleware, (req: AuthRequest, res: Response) => {
   req.url = req.url.replace(/^\/order/, "");
   forwardRequest(req, res, ORDER_SVC);
 });
-app.all("/payment/*",(req: AuthRequest, res: Response) => {
-    req.url = req.url.replace(/^\/payment/, "");
+
+app.all("/payment/*", authMiddleware,(req: AuthRequest, res: Response) => {
+  req.url = req.url.replace(/^\/payment/, "");
   forwardRequest(req, res, PAYMENT_SVC);
+})
+
+app.all("/inventory/*", authMiddleware ,(req: AuthRequest, res: Response) => {
+  req.url = req.url.replace(/^\/payment/, "");
+  forwardRequest(req, res,INVENTORY_SVC);
 })
 
 // User route (no auth for example)
 app.all("/users/*", (req: AuthRequest, res: Response) => {
-    req.url = req.url.replace(/^\/users/, "");
+  req.url = req.url.replace(/^\/users/, "");
   forwardRequest(req, res, USER_SVC);
 });
 
 
 // Health check
 app.get("/", (_req, res) => {
-  res.json({ message: "API Gateway running 🚀" });
+  res.json({ message: "API Gateway running" });
 });
 
 // ----------------------
